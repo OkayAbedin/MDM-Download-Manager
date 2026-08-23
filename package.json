@@ -1,0 +1,100 @@
+{
+  "name": "mdm",
+  "version": "1.1.0",
+  "description": "Modern Download Manager for Windows - High speed multi-segment download accelerator",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev:renderer": "vite",
+    "build:main": "esbuild electron/main.ts --bundle --platform=node --outdir=dist-electron --external:electron && esbuild electron/preload.ts --bundle --platform=node --outdir=dist-electron --external:electron",
+    "dev:main": "wait-on tcp:5173 && npm run build:main && electron dist-electron/main.js",
+    "dev": "concurrently -k -r -s first \"npm run dev:renderer\" \"npm run dev:main\"",
+    "clean:processes": "powershell -NoProfile -Command \"Get-Process -Name '7za', 'MDM - Download Manager', 'electron', 'yt-dlp' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force 'release\\win-unpacked', 'release\\*.7z' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; exit 0\"",
+    "build": "tsc && vite build && npm run build:main",
+    "dist": "npm run clean:processes && npm run build && electron-builder --win --x64",
+    "dist:portable": "npm run clean:processes && npm run build && electron-builder --win portable --x64",
+    "dist:installer": "npm run clean:processes && npm run build && electron-builder --win nsis --x64",
+    "build:portable": "bash build-portable.sh",
+    "build:installer": "bash build-installer.sh",
+    "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.okayabedin.mdm",
+    "productName": "MDM - Download Manager",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin"
+      },
+      {
+        "from": "extension",
+        "to": "extension"
+      }
+    ],
+    "electronDist": "node_modules/electron/dist",
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MDM - Download Manager",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp"
+    }
+  },
+  "keywords": [
+    "download-manager",
+    "idm",
+    "accelerator",
+    "electron",
+    "windows"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.16.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwind-merge": "^3.5.0",
+    "yt-dlp-wrap": "^2.3.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^40.6.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.27.3",
+    "png-to-ico": "^3.0.2",
+    "postcss": "^8.5.6",
+    "sharp": "^0.35.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.8.2",
+    "vite": "^7.1.3",
+    "wait-on": "^9.0.4"
+  }
+}

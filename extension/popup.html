@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 310px;
+      padding: 14px;
+      background-color: #121212;
+      color: #ededed;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+      user-select: none;
+      font-size: 12px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #242424;
+      margin-bottom: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .logo-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      background: #84ce19;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .brand-title {
+      font-weight: 700;
+      font-size: 13px;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+    .brand-slash {
+      color: #666666;
+      font-weight: 400;
+      margin: 0 1px;
+    }
+    .brand-sub {
+      color: #8b949e;
+      font-weight: 500;
+      font-size: 12px;
+    }
+
+    /* Status Badge */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+    .status-connected {
+      background: rgba(132, 206, 25, 0.12);
+      color: #84ce19;
+      border: 1px solid rgba(132, 206, 25, 0.3);
+    }
+    .status-connected .status-dot {
+      background: #84ce19;
+      box-shadow: 0 0 6px rgba(132, 206, 25, 0.8);
+      animation: pulse 2s infinite;
+    }
+    .status-disconnected {
+      background: rgba(244, 63, 94, 0.12);
+      color: #f43f5e;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+    .status-disconnected .status-dot {
+      background: #f43f5e;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Card Containers */
+    .card {
+      background: #181818;
+      border: 1px solid #282828;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    /* Toggle Rows */
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+    }
+    .row:not(:last-child) {
+      border-bottom: 1px solid #222222;
+    }
+    .row-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .row-title {
+      font-weight: 600;
+      color: #ededed;
+      font-size: 11.5px;
+    }
+    .row-desc {
+      font-size: 10px;
+      color: #8b949e;
+    }
+
+    /* Modern Switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 34px;
+      height: 19px;
+      flex-shrink: 0;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #2a2a2a;
+      border: 1px solid #383838;
+      transition: .2s ease;
+      border-radius: 20px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 13px;
+      width: 13px;
+      left: 2px;
+      bottom: 2px;
+      background-color: #ffffff;
+      transition: .2s ease;
+      border-radius: 50%;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+    input:checked + .slider {
+      background-color: #84ce19;
+      border-color: #84ce19;
+    }
+    input:checked + .slider:before {
+      transform: translateX(15px);
+    }
+
+    /* Footer Info */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 4px;
+      font-size: 10.5px;
+      color: #71717a;
+    }
+    .footer-host {
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      color: #8b949e;
+    }
+  </style>
+</head>
+<body>
+  <!-- Top Bar -->
+  <div class="header">
+    <div class="brand">
+      <div class="logo-icon">
+        <svg viewBox="0 0 322.95 322.95" width="14" height="14">
+          <rect fill="#84ce19" width="322.95" height="322.95" rx="65.71" ry="65.71" />
+          <path fill="#ffffff" d="M156.33,173.36h0c-7.08,0-12.81-5.74-12.81-12.81v-69.14c0-11.46-13.9-17.16-21.94-8.99l-68.04,69.14c-7.97,8.1-2.23,21.8,9.13,21.8h41.67c7.08,0,12.81,5.74,12.81,12.81v69.14c0,11.46,13.9,17.16,21.94,8.99l85.73-87.12c2.41-2.45,5.7-3.83,9.13-3.83h26.37c7.08,0,12.81-5.74,12.81-12.81v-69.14c0-11.46-13.9-17.16-21.94-8.99l-85.73,87.12c-2.41,2.45-5.7,3.83-9.13,3.83Z" />
+        </svg>
+      </div>
+      <div class="brand-title">MDM<span class="brand-slash">/</span><span class="brand-sub">Integration</span></div>
+    </div>
+    <div id="statusBadge" class="status-badge status-disconnected">
+      <span class="status-dot"></span>
+      <span id="statusText">Checking...</span>
+    </div>
+  </div>
+
+  <!-- Settings Card -->
+  <div class="card">
+    <div class="row">
+      <div class="row-info">
+        <span class="row-title">Browser Interception</span>
+        <span class="row-desc">Route browser downloads into MDM</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="interceptToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="row">
+      <div class="row-info">
+        <span class="row-title">Video Stream Grabber</span>
+        <span class="row-desc">Overlay button on YouTube & videos</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="videoGrabberToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span class="footer-host">127.0.0.1:9666</span>
+    <span>MDM v1.0</span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

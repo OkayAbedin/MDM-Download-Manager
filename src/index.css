@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-main: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-card: #ffffff;
+    --bg-hover: #f1f5f9;
+    --bg-active: #e2e8f0;
+    --border-color: #e2e8f0;
+    --border-subtle: #f1f5f9;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-sub: #94a3b8;
+    --brand-color: #84ce19;
+    --brand-hover: #73b814;
+  }
+
+  .dark {
+    --bg-main: #121212;
+    --bg-surface: #171717;
+    --bg-card: #1c1c1c;
+    --bg-hover: #232323;
+    --bg-active: #2a2a2a;
+    --border-color: #282828;
+    --border-subtle: #202020;
+    --text-primary: #ededed;
+    --text-secondary: #a1a1aa;
+    --text-muted: #8b949e;
+    --text-sub: #71717a;
+    --brand-color: #84ce19;
+    --brand-hover: #73b814;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-sub);
+}
+
+/* Segment Shimmer Animation */
+@keyframes segment-shimmer {
+  0% { opacity: 0.85; }
+  50% { opacity: 1; }
+  100% { opacity: 0.85; }
+}
+
+.segment-active {
+  animation: segment-shimmer 1.5s infinite ease-in-out;
+}
