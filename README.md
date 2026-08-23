@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <b>The modern, open-source download manager I built because I refused to pay for IDM in 2026.</b>
+  <b>The modern, open-source download manager I built because I refused to pay for IDM.</b>
 </p>
 
 <p align="center">
