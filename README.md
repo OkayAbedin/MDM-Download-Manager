@@ -16,6 +16,13 @@
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
 </p>
 
+
+<p align="center">
+  <a href="https://okayabedin.github.io/MDM-Download-Manager/">
+    <img src="https://img.shields.io/badge/Download_MDM_Now-2ea44f?style=for-the-badge&logo=windows&logoColor=white" alt="Download MDM">
+  </a>
+</p>
+
 ---
 
 ## Why I Built This
@@ -151,5 +158,5 @@ Distributed under the **MIT License**. See `LICENSE` for details.
 ---
 
 <p align="center">
-  Crafted by <a href="https://minhazabedin.vercel.app"><b>Minhaz</b></a>
+  Made by <a href="https://minhazabedin.vercel.app"><b>Minhaz</b></a>
 </p>
