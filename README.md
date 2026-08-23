@@ -17,11 +17,15 @@
 </p>
 
 
-<p align="center">
-  <a href="https://okayabedin.github.io/MDM-Download-Manager/">
-    <img src="https://img.shields.io/badge/Download_MDM_Now-2ea44f?style=for-the-badge&logo=windows&logoColor=white" alt="Download MDM">
-  </a>
-</p>
+<br>
+<div align="center">
+  <h2>
+    <a href="https://okayabedin.github.io/MDM-Download-Manager/">
+      DOWNLOAD MDM
+    </a>
+  </h2>
+</div>
+<br>
 
 ---
 
