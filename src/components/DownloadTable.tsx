@@ -24,12 +24,17 @@ import { formatBytes, formatSpeed, formatTime } from '../utils/format';
 interface DownloadTableProps {
   tasks: DownloadTask[];
   selectedId: string | null;
+  selectedIds?: Set<string>;
   onSelectTask: (id: string | null) => void;
+  onSelectionChange?: (ids: Set<string>) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onRestart: (id: string) => void;
   onDeleteRequest: (task: DownloadTask) => void;
   onDeleteDirect: (id: string, deleteFile: boolean) => void;
+  onBatchDelete?: (deleteFiles: boolean) => void;
+  onBatchPause?: () => void;
+  onBatchResume?: () => void;
   onOpenFile: (path: string) => void;
   onShowInFolder: (path: string) => void;
   onInspectSegments: (task: DownloadTask) => void;
@@ -39,16 +44,22 @@ interface DownloadTableProps {
 export const DownloadTable: React.FC<DownloadTableProps> = ({
   tasks,
   selectedId,
+  selectedIds,
   onSelectTask,
+  onSelectionChange,
   onPause,
   onResume,
   onRestart,
   onDeleteDirect,
+  onBatchDelete,
+  onBatchPause,
+  onBatchResume,
   onOpenFile,
   onShowInFolder,
   onInspectSegments,
   onCalculateChecksum,
 }) => {
+  const [lastAnchorId, setLastAnchorId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -63,9 +74,50 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
 
   const [toastMessage, setToastMessage] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
 
+  const activeSelected = selectedIds || (selectedId ? new Set([selectedId]) : new Set<string>());
+
+  const handleRowClick = (e: React.MouseEvent, task: DownloadTask, index: number) => {
+    if (e.shiftKey && lastAnchorId) {
+      const anchorIdx = tasks.findIndex((t) => t.id === lastAnchorId);
+      if (anchorIdx >= 0) {
+        const start = Math.min(anchorIdx, index);
+        const end = Math.max(anchorIdx, index);
+        const newSet = e.ctrlKey || e.metaKey ? new Set(activeSelected) : new Set<string>();
+        for (let i = start; i <= end; i++) {
+          newSet.add(tasks[i].id);
+        }
+        if (onSelectionChange) onSelectionChange(newSet);
+        else onSelectTask(task.id);
+        return;
+      }
+    }
+
+    if (e.ctrlKey || e.metaKey) {
+      const next = new Set(activeSelected);
+      if (next.has(task.id)) {
+        next.delete(task.id);
+      } else {
+        next.add(task.id);
+      }
+      setLastAnchorId(task.id);
+      if (onSelectionChange) onSelectionChange(next);
+      else onSelectTask(next.size > 0 ? Array.from(next)[0] : null);
+      return;
+    }
+
+    // Normal single click
+    setLastAnchorId(task.id);
+    if (onSelectionChange) onSelectionChange(new Set([task.id]));
+    else onSelectTask(task.id);
+  };
+
   const handleContextMenu = (e: React.MouseEvent, task: DownloadTask) => {
     e.preventDefault();
-    onSelectTask(task.id);
+    if (!activeSelected.has(task.id)) {
+      setLastAnchorId(task.id);
+      if (onSelectionChange) onSelectionChange(new Set([task.id]));
+      else onSelectTask(task.id);
+    }
     setContextMenu({
       visible: true,
       x: e.clientX,
@@ -155,8 +207,8 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
             <p className="text-[11px]">Click "+ Add URL" to begin high-speed parallel downloads</p>
           </div>
         ) : (
-          tasks.map((task) => {
-            const isSelected = selectedId === task.id;
+          tasks.map((task, index) => {
+            const isSelected = activeSelected.has(task.id);
             const isDownloading = task.status === 'downloading';
             const isCompleted = task.status === 'completed';
             const isPaused = task.status === 'paused' || task.status === 'idle';
@@ -165,7 +217,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
             return (
               <div
                 key={task.id}
-                onClick={() => onSelectTask(task.id)}
+                onClick={(e) => handleRowClick(e, task, index)}
                 onContextMenu={(e) => handleContextMenu(e, task)}
                 onDoubleClick={() => {
                   if (isCompleted) {
@@ -195,12 +247,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                     <span className="font-medium text-theme-text truncate" title={task.filename}>
                       {task.filename}
                     </span>
-                    {task.resumable && (
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-brand/10 text-brand font-mono border border-brand/20 flex-shrink-0">
-                        Resume
-                      </span>
-                    )}
-
+                    
                     {/* VirusTotal Security Badges */}
                     {task.virusTotalStatus === 'clean' && (
                       <a
@@ -222,126 +269,90 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                         target="_blank"
                         rel="noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center space-x-1 text-[9px] px-1.5 py-0.2 rounded font-mono font-medium bg-slate-500/10 text-slate-400 border border-slate-500/25 hover:underline flex-shrink-0"
-                        title="File hash not yet in VirusTotal database. Click to view on VirusTotal."
+                        className="inline-flex items-center space-x-1 text-[9px] px-1.5 py-0.2 rounded font-mono font-medium bg-theme-border text-theme-muted hover:underline flex-shrink-0"
+                        title="VirusTotal: File hash uncataloged (clean/new file)"
                       >
-                        <ShieldCheck className="w-2.5 h-2.5 opacity-60" />
+                        <ShieldCheck className="w-2.5 h-2.5" />
                         <span>Uncataloged</span>
                       </a>
                     )}
 
-                    {task.virusTotalStatus === 'malicious' && (
+                    {(task.virusTotalStatus === 'malicious' || task.virusTotalStatus === 'suspicious') && (
                       <a
                         href={task.virusTotalScore?.permalink}
                         target="_blank"
                         rel="noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center space-x-1 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-rose-500/15 text-rose-500 border border-rose-500/40 hover:underline animate-pulse flex-shrink-0"
-                        title={`VirusTotal: ${task.virusTotalScore?.malicious} threat detections!`}
+                        className="inline-flex items-center space-x-1 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-rose-500/15 text-rose-500 border border-rose-500/30 hover:underline flex-shrink-0"
+                        title={`⚠️ VirusTotal Alert: ${task.virusTotalScore?.malicious || 0} security engines flagged this file!`}
                       >
-                        <AlertTriangle className="w-2.5 h-2.5" />
-                        <span>Threat ({task.virusTotalScore?.malicious})</span>
-                      </a>
-                    )}
-
-                    {task.virusTotalStatus === 'suspicious' && (
-                      <a
-                        href={task.virusTotalScore?.permalink}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center space-x-1 text-[9px] px-1.5 py-0.2 rounded font-mono font-medium bg-amber-500/15 text-amber-500 border border-amber-500/40 hover:underline flex-shrink-0"
-                        title={`VirusTotal: ${task.virusTotalScore?.suspicious} suspicious detections`}
-                      >
-                        <AlertTriangle className="w-2.5 h-2.5" />
-                        <span>Suspicious</span>
+                        <AlertTriangle className="w-2.5 h-2.5 text-rose-500" />
+                        <span>{task.virusTotalScore?.malicious || 1} Flags</span>
                       </a>
                     )}
 
                     {task.virusTotalStatus === 'scanning' && (
-                      <span className="inline-flex items-center space-x-1 text-[9px] px-1.5 py-0.2 rounded font-mono bg-blue-500/10 text-blue-500 border border-blue-500/25 flex-shrink-0">
+                      <span className="inline-flex items-center space-x-1 text-[9px] px-1.5 py-0.2 rounded font-mono bg-brand/10 text-brand border border-brand/20 flex-shrink-0">
                         <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                        <span>VirusTotal...</span>
-                      </span>
-                    )}
-
-                    {task.virusTotalStatus === 'error' && (
-                      <span className="inline-flex items-center space-x-1 text-[9px] px-1.5 py-0.2 rounded font-mono bg-rose-500/10 text-rose-400 border border-rose-500/25 flex-shrink-0" title="VirusTotal scan failed or API error">
-                        <AlertCircle className="w-2.5 h-2.5" />
-                        <span>Scan Error</span>
+                        <span>Scanning...</span>
                       </span>
                     )}
                   </div>
 
-                  <div className="text-[11px] text-theme-muted truncate mt-0.5 pl-4" title={task.url}>
+                  <div className="text-[10px] text-theme-muted font-mono truncate pl-4 mt-0.5" title={task.url}>
                     {task.url}
                   </div>
-                  {isError && task.errorMessage && (
-                    <div className="text-[10px] text-rose-400 flex items-center space-x-1 mt-0.5 pl-4 truncate">
-                      <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                      <span>{task.errorMessage}</span>
-                    </div>
-                  )}
                 </div>
 
-                {/* Size / Downloaded */}
+                {/* Size / Category */}
                 <div className="col-span-2 text-theme-muted font-mono text-[11px]">
-                  <div className="text-theme-text font-medium">
-                    {formatBytes(task.downloadedBytes)} / {task.fileSize > 0 ? formatBytes(task.fileSize) : 'Unknown'}
+                  <div>
+                    {task.fileSize > 0
+                      ? `${formatBytes(task.downloadedBytes)} / ${formatBytes(task.fileSize)}`
+                      : formatBytes(task.downloadedBytes)}
                   </div>
-                  <div className="text-[10px] text-theme-sub capitalize">
-                    {task.category}
-                  </div>
+                  <div className="text-[10px] text-theme-sub capitalize">{task.category}</div>
                 </div>
 
-                {/* Multi-Segment Block Visualizer */}
-                <div className="col-span-3 pr-2 space-y-1">
-                  <div className="flex justify-between items-center text-[10px] font-mono">
-                    <span className={`font-bold ${
-                      isCompleted ? 'text-emerald-500' :
-                      isDownloading ? 'text-blue-500 dark:text-blue-400' :
-                      isPaused ? 'text-amber-500' :
-                      isError ? 'text-rose-500' : 'text-theme-sub'
-                    }`}>
-                      {task.progress}%
+                {/* Progress Bar & Streams */}
+                <div className="col-span-3 pr-2">
+                  <div className="flex items-center justify-between text-[10px] text-theme-muted mb-1 font-mono">
+                    <span>
+                      {task.status === 'completed' ? (
+                        <span className="text-emerald-500 font-semibold">100%</span>
+                      ) : task.status === 'error' ? (
+                        <span className="text-rose-500">{task.errorMessage || 'Failed'}</span>
+                      ) : (
+                        `${task.progress.toFixed(1)}%`
+                      )}
                     </span>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onInspectSegments(task);
-                      }}
-                      className="text-[10px] text-theme-muted hover:text-brand flex items-center space-x-1 transition cursor-pointer"
-                      title="Inspect parallel stream threads"
-                    >
+                    <span className="flex items-center space-x-1 text-[10px]">
                       <Layers className="w-2.5 h-2.5" />
                       <span>{task.segmentsCount || 1} streams</span>
-                    </button>
+                    </span>
                   </div>
 
-                  {/* IDM-Style Segment Block Grid */}
-                  <div className="w-full h-2.5 bg-theme-hover rounded-sm overflow-hidden p-[1px] border border-theme-border flex gap-[1px]">
+                  {/* High Quality Flat Segmented Progress Bar */}
+                  <div className="w-full bg-theme-surface h-1.5 rounded-full overflow-hidden border border-theme-border flex">
                     {task.segments && task.segments.length > 0 ? (
                       task.segments.map((seg, idx) => {
-                        const threadColors = [
-                          'bg-sky-500', 'bg-emerald-500', 'bg-indigo-500', 'bg-amber-500',
-                          'bg-rose-500', 'bg-cyan-400', 'bg-purple-500', 'bg-teal-400'
-                        ];
-                        const threadColor = threadColors[idx % threadColors.length];
-
                         return (
                           <div
                             key={idx}
-                            className="h-full flex-1 bg-theme-main rounded-[1px] overflow-hidden relative"
-                            title={`Stream #${idx + 1}: ${seg.progress}%`}
+                            className="h-full flex-1 bg-theme-main relative border-r border-theme-border/40 last:border-r-0"
                           >
                             <div
                               style={{ width: `${seg.progress}%` }}
-                              className={`h-full transition-all duration-150 ${
-                                isCompleted ? 'bg-emerald-500' :
-                                isPaused ? 'bg-amber-400' :
-                                isError ? 'bg-rose-400' :
-                                `${threadColor} ${isDownloading && seg.progress < 100 ? 'segment-active' : ''}`
+                              className={`h-full transition-all duration-200 ${
+                                isCompleted
+                                  ? 'bg-emerald-500'
+                                  : isDownloading
+                                  ? 'bg-brand'
+                                  : isPaused
+                                  ? 'bg-amber-400'
+                                  : isError
+                                  ? 'bg-rose-500'
+                                  : 'bg-theme-sub'
                               }`}
                             />
                           </div>
@@ -350,70 +361,73 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                     ) : (
                       <div
                         style={{ width: `${task.progress}%` }}
-                        className={`h-full rounded-[1px] transition-all duration-200 ${
-                          isCompleted ? 'bg-emerald-500' :
-                          isDownloading ? 'bg-blue-500' :
-                          isPaused ? 'bg-amber-400' :
-                          isError ? 'bg-rose-400' : 'bg-theme-sub'
+                        className={`h-full transition-all duration-200 ${
+                          isCompleted
+                            ? 'bg-emerald-500'
+                            : isDownloading
+                            ? 'bg-brand'
+                            : isPaused
+                            ? 'bg-amber-400'
+                            : isError
+                            ? 'bg-rose-500'
+                            : 'bg-theme-sub'
                         }`}
                       />
                     )}
                   </div>
                 </div>
 
-                {/* Speed */}
-                <div className="col-span-1 text-right font-mono text-[11px] text-blue-500 dark:text-blue-400 font-semibold">
-                  {isDownloading ? formatSpeed(task.speed) : '--'}
+                {/* Download Speed */}
+                <div className="col-span-1 text-right font-mono text-[11px]">
+                  {isDownloading && task.speed && task.speed > 0 ? (
+                    <span className="text-brand font-medium">{formatSpeed(task.speed)}</span>
+                  ) : (
+                    <span className="text-theme-sub">--</span>
+                  )}
                 </div>
 
                 {/* ETA */}
                 <div className="col-span-1 text-right font-mono text-[11px] text-theme-muted">
-                  {isDownloading && task.eta > 0 ? formatTime(task.eta) : isCompleted ? 'Done' : '--'}
+                  {isDownloading && task.eta !== undefined && task.eta > 0 ? (
+                    formatTime(task.eta)
+                  ) : isCompleted ? (
+                    <span className="text-emerald-500 font-medium">Done</span>
+                  ) : (
+                    '--'
+                  )}
                 </div>
 
-                {/* Inline Action Buttons */}
-                <div className="col-span-1 flex items-center justify-center space-x-1 text-theme-muted">
+                {/* Row Quick Action Buttons */}
+                <div className="col-span-1 flex items-center justify-center space-x-1" onClick={(e) => e.stopPropagation()}>
                   {isDownloading ? (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPause(task.id);
-                      }}
-                      className="p-1 rounded hover:bg-theme-hover hover:text-amber-500 transition cursor-pointer"
-                      title="Pause"
+                      onClick={() => onPause(task.id)}
+                      className="p-1 rounded hover:bg-theme-surface text-theme-muted hover:text-amber-500 transition cursor-pointer"
+                      title="Pause Download"
                     >
                       <Pause className="w-3 h-3" />
                     </button>
                   ) : isCompleted ? (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenFile(task.savePath);
-                      }}
-                      className="p-1 rounded hover:bg-theme-hover hover:text-emerald-500 transition cursor-pointer"
+                      onClick={() => onOpenFile(task.savePath)}
+                      className="p-1 rounded hover:bg-theme-surface text-theme-muted hover:text-emerald-500 transition cursor-pointer"
                       title="Open File"
                     >
                       <FileCheck className="w-3 h-3" />
                     </button>
                   ) : (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onResume(task.id);
-                      }}
-                      className="p-1 rounded hover:bg-theme-hover hover:text-brand transition cursor-pointer"
-                      title="Resume"
+                      onClick={() => onResume(task.id)}
+                      className="p-1 rounded hover:bg-theme-surface text-theme-muted hover:text-brand transition cursor-pointer"
+                      title="Resume Download"
                     >
                       <Play className="w-3 h-3" />
                     </button>
                   )}
 
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onShowInFolder(task.savePath);
-                    }}
-                    className="p-1 rounded hover:bg-theme-hover hover:text-theme-text transition cursor-pointer"
+                    onClick={() => onShowInFolder(task.savePath)}
+                    className="p-1 rounded hover:bg-theme-surface text-theme-muted hover:text-theme-text transition cursor-pointer"
                     title="Show in Folder"
                   >
                     <FolderOpen className="w-3 h-3" />
@@ -428,137 +442,208 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
       {/* Right-Click Context Menu */}
       {contextMenu.visible && contextMenu.task && (
         <div
-          className="fixed bg-theme-surface border border-theme-border rounded-lg shadow-xl py-1 z-50 text-xs w-48 font-medium select-none"
-          style={{ top: contextMenu.y, left: Math.min(contextMenu.x, window.innerWidth - 200) }}
+          className="fixed bg-theme-surface border border-theme-border rounded-lg shadow-xl py-1 z-50 text-xs w-52 font-medium select-none"
+          style={{ top: contextMenu.y, left: Math.min(contextMenu.x, window.innerWidth - 220) }}
           onClick={(e) => e.stopPropagation()}
         >
-          {contextMenu.task.status === 'downloading' ? (
-            <button
-              onClick={() => {
-                if (contextMenu.task) onPause(contextMenu.task.id);
-                closeContextMenu();
-              }}
-              className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-            >
-              <Pause className="w-3 h-3 text-amber-500" />
-              <span>Pause</span>
-            </button>
-          ) : contextMenu.task.status === 'completed' ? (
-            <button
-              onClick={() => {
-                if (contextMenu.task) onRestart(contextMenu.task.id);
-                closeContextMenu();
-              }}
-              className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-            >
-              <RotateCcw className="w-3 h-3 text-theme-muted" />
-              <span>Redownload</span>
-            </button>
+          {activeSelected.size > 1 ? (
+            <>
+              <div className="px-3 py-1 text-[10px] text-theme-muted border-b border-theme-border font-semibold uppercase tracking-wider">
+                {activeSelected.size} Items Selected
+              </div>
+              <button
+                onClick={() => {
+                  if (onBatchResume) onBatchResume();
+                  else {
+                    for (const id of activeSelected) onResume(id);
+                  }
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-brand transition cursor-pointer"
+              >
+                <Play className="w-3 h-3 text-brand" />
+                <span>Resume ({activeSelected.size} Selected)</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (onBatchPause) onBatchPause();
+                  else {
+                    for (const id of activeSelected) onPause(id);
+                  }
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-amber-500 transition cursor-pointer"
+              >
+                <Pause className="w-3 h-3 text-amber-500" />
+                <span>Pause ({activeSelected.size} Selected)</span>
+              </button>
+              <button
+                onClick={() => {
+                  const selTasks = tasks.filter((t) => activeSelected.has(t.id));
+                  const urls = selTasks.map((t) => t.url).join('\n');
+                  navigator.clipboard.writeText(urls);
+                  setToastMessage({ type: 'success', text: `Copied ${selTasks.length} URLs to clipboard` });
+                  setTimeout(() => setToastMessage(null), 3000);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+              >
+                <Copy className="w-3 h-3 text-theme-muted" />
+                <span>Copy {activeSelected.size} URLs</span>
+              </button>
+              <div className="h-[1px] bg-theme-border my-1" />
+              <button
+                onClick={() => {
+                  if (onBatchDelete) onBatchDelete(false);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+              >
+                <Trash2 className="w-3 h-3 text-theme-muted" />
+                <span>Remove ({activeSelected.size}) from List</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (onBatchDelete) onBatchDelete(true);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-rose-500/15 text-rose-500 transition cursor-pointer"
+              >
+                <Trash2 className="w-3 h-3 text-rose-500" />
+                <span>Delete ({activeSelected.size}) Files from Disk</span>
+              </button>
+            </>
           ) : (
-            <button
-              onClick={() => {
-                if (contextMenu.task) onResume(contextMenu.task.id);
-                closeContextMenu();
-              }}
-              className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-            >
-              <Play className="w-3 h-3 text-brand" />
-              <span>Resume</span>
-            </button>
+            <>
+              {contextMenu.task.status === 'downloading' ? (
+                <button
+                  onClick={() => {
+                    if (contextMenu.task) onPause(contextMenu.task.id);
+                    closeContextMenu();
+                  }}
+                  className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+                >
+                  <Pause className="w-3 h-3 text-amber-500" />
+                  <span>Pause</span>
+                </button>
+              ) : contextMenu.task.status === 'completed' ? (
+                <button
+                  onClick={() => {
+                    if (contextMenu.task) onRestart(contextMenu.task.id);
+                    closeContextMenu();
+                  }}
+                  className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3 text-theme-muted" />
+                  <span>Redownload</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (contextMenu.task) onResume(contextMenu.task.id);
+                    closeContextMenu();
+                  }}
+                  className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+                >
+                  <Play className="w-3 h-3 text-brand" />
+                  <span>Resume</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  if (contextMenu.task) onOpenFile(contextMenu.task.savePath);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+              >
+                <FileCheck className="w-3 h-3 text-emerald-500" />
+                <span>Open File</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (contextMenu.task) onShowInFolder(contextMenu.task.savePath);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+              >
+                <FolderOpen className="w-3 h-3 text-theme-muted" />
+                <span>Show in Folder</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (contextMenu.task) onInspectSegments(contextMenu.task);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+              >
+                <Layers className="w-3 h-3 text-brand" />
+                <span>Stream Inspector</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (contextMenu.task) onCalculateChecksum(contextMenu.task);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+              >
+                <Hash className="w-3 h-3 text-theme-muted" />
+                <span>Verify Checksum</span>
+              </button>
+
+              {/* VirusTotal Check option */}
+              {contextMenu.task.status === 'completed' && (
+                <button
+                  onClick={() => {
+                    if (contextMenu.task) handleCheckVirusTotal(contextMenu.task);
+                    closeContextMenu();
+                  }}
+                  className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+                >
+                  <ShieldCheck className="w-3 h-3 text-brand" />
+                  <span>Scan on VirusTotal</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  if (contextMenu.task) navigator.clipboard.writeText(contextMenu.task.url);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+              >
+                <Copy className="w-3 h-3 text-theme-muted" />
+                <span>Copy URL</span>
+              </button>
+
+              <div className="h-[1px] bg-theme-border my-1" />
+
+              <button
+                onClick={() => {
+                  if (contextMenu.task) onDeleteDirect(contextMenu.task.id, false);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
+              >
+                <Trash2 className="w-3 h-3 text-theme-muted" />
+                <span>Remove from List</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (contextMenu.task) onDeleteDirect(contextMenu.task.id, true);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-rose-500/15 text-rose-500 transition cursor-pointer"
+              >
+                <Trash2 className="w-3 h-3 text-rose-500" />
+                <span>Delete File from Disk</span>
+              </button>
+            </>
           )}
-
-          <button
-            onClick={() => {
-              if (contextMenu.task) onOpenFile(contextMenu.task.savePath);
-              closeContextMenu();
-            }}
-            className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-          >
-            <FileCheck className="w-3 h-3 text-emerald-500" />
-            <span>Open File</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (contextMenu.task) onShowInFolder(contextMenu.task.savePath);
-              closeContextMenu();
-            }}
-            className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-          >
-            <FolderOpen className="w-3 h-3 text-theme-muted" />
-            <span>Show in Folder</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (contextMenu.task) onInspectSegments(contextMenu.task);
-              closeContextMenu();
-            }}
-            className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-          >
-            <Layers className="w-3 h-3 text-brand" />
-            <span>Stream Inspector</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (contextMenu.task) onCalculateChecksum(contextMenu.task);
-              closeContextMenu();
-            }}
-            className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-          >
-            <Hash className="w-3 h-3 text-theme-muted" />
-            <span>Verify Checksum</span>
-          </button>
-
-          {/* VirusTotal Check option */}
-          {contextMenu.task.status === 'completed' && (
-            <button
-              onClick={() => {
-                if (contextMenu.task) handleCheckVirusTotal(contextMenu.task);
-                closeContextMenu();
-              }}
-              className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-            >
-              <ShieldCheck className="w-3 h-3 text-brand" />
-              <span>Scan on VirusTotal</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => {
-              if (contextMenu.task) navigator.clipboard.writeText(contextMenu.task.url);
-              closeContextMenu();
-            }}
-            className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-          >
-            <Copy className="w-3 h-3 text-theme-muted" />
-            <span>Copy URL</span>
-          </button>
-
-          <div className="h-[1px] bg-theme-border my-1" />
-
-          <button
-            onClick={() => {
-              if (contextMenu.task) onDeleteDirect(contextMenu.task.id, false);
-              closeContextMenu();
-            }}
-            className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-theme-hover text-theme-text transition cursor-pointer"
-          >
-            <Trash2 className="w-3 h-3 text-theme-muted" />
-            <span>Remove from List</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (contextMenu.task) onDeleteDirect(contextMenu.task.id, true);
-              closeContextMenu();
-            }}
-            className="w-full flex items-center space-x-2 px-3 py-1.5 hover:bg-rose-500/15 text-rose-500 transition cursor-pointer"
-          >
-            <Trash2 className="w-3 h-3 text-rose-500" />
-            <span>Delete File from Disk</span>
-          </button>
         </div>
       )}
     </div>

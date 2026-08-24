@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { DownloadTask, AddDownloadParams, AppSettings } from '../src/types/download';
-import { DownloadEngine, detectCategory } from './downloadEngine';
+import { DownloadTask, AddDownloadParams, AppSettings, ProbeResult } from '../src/types/download';
+import { DownloadEngine, detectCategory, isStreamingMediaUrl } from './downloadEngine';
 import { PersistentStore } from './store';
 
 export class QueueManager {
@@ -56,7 +56,16 @@ export class QueueManager {
 
   async addDownload(params: AddDownloadParams): Promise<DownloadTask> {
     const settings = this.store.getSettings();
-    const probe = await this.engine.probeUrl(params.url, params.headers);
+    const isStreaming = isStreamingMediaUrl(params.url);
+    
+    let probe: Partial<ProbeResult> = {};
+    if (isStreaming || !params.filename) {
+      try {
+        probe = await this.engine.probeUrl(params.url, params.headers);
+      } catch (err) {
+        console.warn('URL probe skipped or failed, proceeding directly to download:', err);
+      }
+    }
 
     // Sanitize filename to ensure it is basename only and has no invalid Windows path characters
     let rawFilename = params.filename ? path.basename(params.filename) : (probe.filename || `download_${Date.now()}`);
@@ -99,7 +108,7 @@ export class QueueManager {
       url: probe.url || params.url,
       filename,
       savePath,
-      fileSize: probe.fileSize,
+      fileSize: probe.fileSize || 0,
       downloadedBytes: 0,
       progress: 0,
       speed: 0,
@@ -107,7 +116,7 @@ export class QueueManager {
       eta: 0,
       elapsedTime: 0,
       status: 'idle',
-      resumable: probe.resumable,
+      resumable: probe.resumable ?? false,
       segmentsCount: params.segmentsCount || settings.defaultSegments,
       segments: [],
       category,
@@ -118,6 +127,7 @@ export class QueueManager {
       mediaType: isAudio ? 'audio' : (params.mediaType || 'video'),
       mediaQuality: params.mediaQuality || 'best',
       audioFormat: params.audioFormat || 'mp3',
+      convertFormat: params.convertFormat,
       mediaThumbnail: probe.mediaThumbnail,
       mediaDuration: probe.mediaDuration,
       mediaUploader: probe.mediaUploader,

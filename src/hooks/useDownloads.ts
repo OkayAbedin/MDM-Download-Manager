@@ -4,7 +4,7 @@ import { DownloadTask, AppSettings, DownloadCategory, AddDownloadParams, default
 export function useDownloads() {
   const [tasks, setTasks] = useState<DownloadTask[]>([]);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [inspectingTask, setInspectingTask] = useState<DownloadTask | null>(null);
   const [checksumTask, setChecksumTask] = useState<DownloadTask | null>(null);
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
@@ -94,10 +94,35 @@ export function useDownloads() {
     if (window.electronAPI) {
       await window.electronAPI.cancelDownload(id, deleteFile);
       setTasks((prev) => prev.filter((t) => t.id !== id));
-      if (selectedId === id) setSelectedId(null);
+      setSelectedIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       if (inspectingTask?.id === id) setInspectingTask(null);
     }
-  }, [selectedId, inspectingTask]);
+  }, [inspectingTask]);
+
+  const pauseSelected = useCallback(async () => {
+    for (const id of selectedIds) {
+      await pauseDownload(id);
+    }
+  }, [selectedIds, pauseDownload]);
+
+  const resumeSelected = useCallback(async () => {
+    for (const id of selectedIds) {
+      await resumeDownload(id);
+    }
+  }, [selectedIds, resumeDownload]);
+
+  const deleteSelected = useCallback(async (deleteFile = false) => {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      await cancelDownload(id, deleteFile);
+    }
+    setSelectedIds(new Set());
+  }, [selectedIds, cancelDownload]);
 
   const pauseAll = useCallback(async () => {
     if (window.electronAPI) {
@@ -131,11 +156,18 @@ export function useDownloads() {
     }
   }, []);
 
+  const selectedId = Array.from(selectedIds)[0] || null;
+
   return {
     tasks,
     settings,
     selectedId,
-    setSelectedId,
+    selectedIds,
+    setSelectedIds,
+    setSelectedId: (id: string | null) => setSelectedIds(id ? new Set([id]) : new Set()),
+    pauseSelected,
+    resumeSelected,
+    deleteSelected,
     inspectingTask,
     setInspectingTask,
     checksumTask,

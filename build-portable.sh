@@ -29,5 +29,5 @@ npx electron-builder --win portable --x64 --prepackaged "release/win-unpacked"
 
 echo ""
 echo "✅ [SUCCESS] Portable build completed!"
-echo "📍 Output: release/MDM - Download Manager 1.1.0.exe"
+echo "📍 Output: release/MDM - Download Manager 1.1.2.exe"
 echo "----------------------------------------------------"

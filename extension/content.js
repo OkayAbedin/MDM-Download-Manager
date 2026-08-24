@@ -173,4 +173,119 @@
   scanVideos();
   const observer = new MutationObserver(scanVideos);
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // ── KEYBOARD SHORTCUTS & CLICK MODIFIERS ─────────────────────────
+  let toastEl = null;
+  let toastTimer = null;
+
+  function showMdmToast(text, isSuccess = true) {
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(18, 18, 18, 0.95);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(132, 206, 25, 0.4);
+        border-radius: 8px;
+        padding: 8px 14px;
+        color: #ededed;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 12px;
+        font-weight: 500;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+        transition: opacity 0.25s ease, transform 0.25s ease;
+        opacity: 0;
+        transform: translateY(8px);
+        pointer-events: none;
+        user-select: none;
+      `;
+      document.body.appendChild(toastEl);
+    }
+
+    toastEl.innerHTML = `
+      <div style="width: 16px; height: 16px; border-radius: 4px; background: ${isSuccess ? '#84ce19' : '#38bdf8'}; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="${isSuccess ? '#000' : '#fff'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+      <span>${text}</span>
+    `;
+
+    toastEl.style.opacity = '1';
+    toastEl.style.transform = 'translateY(0)';
+
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      if (toastEl) {
+        toastEl.style.opacity = '0';
+        toastEl.style.transform = 'translateY(8px)';
+      }
+    }, 2200);
+  }
+
+  // Intercept click events with Shift or Alt modifiers
+  window.addEventListener('click', (e) => {
+    // Notify background script about active modifier state for upcoming downloads
+    if (e.shiftKey || e.altKey) {
+      try {
+        extApi.runtime.sendMessage({
+          action: 'KEY_MODIFIER_ACTIVE',
+          shift: e.shiftKey,
+          alt: e.altKey,
+          timestamp: Date.now()
+        });
+      } catch {}
+    }
+
+    // 1. Alt + Click: Instant Force Download with MDM
+    if (e.altKey && !e.shiftKey && !e.ctrlKey) {
+      const link = e.target.closest('a');
+      const img = e.target.closest('img');
+      const videoEl = e.target.closest('video');
+
+      let targetUrl = '';
+      let targetName = '';
+
+      if (link && link.href && !link.href.startsWith('javascript:') && !link.href.startsWith('#')) {
+        targetUrl = link.href;
+        targetName = link.download || link.textContent?.trim().slice(0, 40) || '';
+      } else if (img && (img.currentSrc || img.src)) {
+        targetUrl = img.currentSrc || img.src;
+      } else if (videoEl && (videoEl.currentSrc || videoEl.src)) {
+        targetUrl = videoEl.currentSrc || videoEl.src;
+      }
+
+      if (targetUrl && !targetUrl.startsWith('blob:') && !targetUrl.startsWith('data:')) {
+        e.preventDefault();
+        e.stopPropagation();
+        showMdmToast('Alt + Click: Sending to MDM...', true);
+
+        extApi.runtime.sendMessage({
+          action: 'DOWNLOAD_URL',
+          url: targetUrl,
+          filename: targetName || undefined,
+          pageUrl: window.location.href
+        }, (res) => {
+          if (res && res.success) {
+            showMdmToast('Sent to MDM Download Manager!', true);
+          }
+        });
+      }
+    }
+
+    // 2. Shift + Click: Inform user of MDM interception bypass / force
+    if (e.shiftKey && !e.altKey) {
+      const link = e.target.closest('a');
+      if (link && link.href) {
+        showMdmToast('Shift + Click: Bypassing / Toggling MDM...', false);
+      }
+    }
+  }, true);
 })();

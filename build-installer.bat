@@ -7,6 +7,9 @@ echo ====================================================
 echo Terminating background processes...
 powershell -NoProfile -Command "Get-Process -Name 'electron', 'MDM - Download Manager', '7za', 'yt-dlp' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0"
 
+echo Cleaning stale win-unpacked...
+node scripts/clean_win_unpacked.js
+
 echo Compiling frontend and electron main bundles...
 call npm run build
 if %ERRORLEVEL% NEQ 0 (
@@ -20,6 +23,9 @@ python scripts/generate_nsis_assets.py
 echo Unpacking application directory...
 call npx electron-builder --dir --win --x64
 
+echo Finalizing win-unpacked...
+node scripts/stage_win_unpacked.js
+
 echo Packaging Windows Setup Installer with Custom NSIS Branding...
 call npx electron-builder --win nsis --x64 --prepackaged "release\win-unpacked"
 if %ERRORLEVEL% NEQ 0 (
@@ -30,6 +36,6 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 echo ====================================================
 echo  [SUCCESS] Setup Installer build completed!
-echo  Output: release\MDM - Download Manager Setup 1.1.0.exe
+echo  Output: release\MDM - Download Manager Setup 1.1.2.exe
 echo ====================================================
 echo.

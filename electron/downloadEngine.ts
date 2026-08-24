@@ -110,6 +110,67 @@ function parseFilenameFromHeaders(headers: http.IncomingHttpHeaders, urlStr: str
   return `download_${Date.now()}`;
 }
 
+export function mergeCookies(existingCookie = '', setCookieHeader?: string | string[]): string {
+  if (!setCookieHeader) return existingCookie;
+  const setCookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+  const cookieMap = new Map<string, string>();
+
+  if (existingCookie) {
+    existingCookie.split(';').forEach((pair) => {
+      const [k, ...v] = pair.trim().split('=');
+      if (k) cookieMap.set(k.trim(), v.join('='));
+    });
+  }
+
+  for (const sc of setCookies) {
+    const firstPart = sc.split(';')[0];
+    if (firstPart) {
+      const [k, ...v] = firstPart.trim().split('=');
+      if (k) cookieMap.set(k.trim(), v.join('='));
+    }
+  }
+
+  return Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+export function extractGoogleDriveConfirmation(html: string, currentUrl: string): string | null {
+  if (!html || typeof html !== 'string') return null;
+
+  // Pattern 1: Form with action and hidden inputs (confirm, id, uuid, at)
+  const formMatch = html.match(/<form[^>]*id=["']download-form["'][^>]*action=["']([^"']+)["'][^>]*>([\s\S]*?)<\/form>/i) ||
+                    html.match(/<form[^>]*action=["']([^"']*drive\.usercontent\.google\.com\/download[^"']*)["'][^>]*>([\s\S]*?)<\/form>/i) ||
+                    html.match(/<form[^>]*action=["']([^"']+)["'][^>]*>([\s\S]*?name=["']confirm["'][\s\S]*?)<\/form>/i);
+
+  if (formMatch) {
+    const action = formMatch[1];
+    const formBody = formMatch[2];
+    const inputMatches = Array.from(formBody.matchAll(/<input[^>]*name=["']([^"']+)["'][^>]*value=["']([^"']*)["']/gi));
+    try {
+      const targetUrl = new URL(action, currentUrl);
+      for (const match of inputMatches) {
+        if (match[1] && match[2] !== undefined) {
+          targetUrl.searchParams.set(match[1], match[2]);
+        }
+      }
+      return targetUrl.toString();
+    } catch {}
+  }
+
+  // Pattern 2: Download link button (uc-download-link or export=download with confirm parameter)
+  const linkMatch = html.match(/<a[^>]*id=["']uc-download-link["'][^>]*href=["']([^"']+)["']/i) ||
+                    html.match(/<a[^>]*href=["']([^"']*export=download[^"']*confirm=[^"']*)["']/i) ||
+                    html.match(/<a[^>]*href=["']([^"']*drive\.usercontent\.google\.com\/download[^"']*)["']/i);
+
+  if (linkMatch && linkMatch[1]) {
+    try {
+      const decoded = linkMatch[1].replace(/&amp;/g, '&');
+      return new URL(decoded, currentUrl).toString();
+    } catch {}
+  }
+
+  return null;
+}
+
 export class DownloadEngine {
   private activeStreams: Map<string, { abort: () => void; rateLimiter?: RateLimiterStream }> = new Map();
   private speedHistories: Map<string, Array<{ time: number; bytes: number }>> = new Map();
@@ -266,37 +327,46 @@ export class DownloadEngine {
     return new Promise((resolve, reject) => {
       let redirectCount = 0;
       const maxRedirects = 10;
+      let currentCookie = customHeaders['Cookie'] || '';
 
-      const attempt = (currentUrl: string) => {
+      const attempt = (currentUrl: string, refererUrl = '') => {
         try {
           const parsed = new URL(currentUrl);
           const isHttps = parsed.protocol === 'https:';
           const client = isHttps ? https : http;
           const agent = isHttps ? this.httpsAgent : this.httpAgent;
 
+          const reqHeaders: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+            ...customHeaders,
+          };
+          if (currentCookie) reqHeaders['Cookie'] = currentCookie;
+          if (refererUrl) reqHeaders['Referer'] = refererUrl;
+
           const req = client.request(
             currentUrl,
             {
               method: 'HEAD',
               agent,
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-                ...customHeaders,
-              },
+              headers: reqHeaders,
               timeout: 15000,
             },
             (res) => {
+              if (res.headers['set-cookie']) {
+                currentCookie = mergeCookies(currentCookie, res.headers['set-cookie']);
+              }
+
               if ([301, 302, 303, 307, 308].includes(res.statusCode || 0) && res.headers.location) {
                 redirectCount++;
                 if (redirectCount > maxRedirects) {
                   return reject(new Error('Too many redirects'));
                 }
                 const redirectUrl = new URL(res.headers.location, currentUrl).toString();
-                return attempt(redirectUrl);
+                return attempt(redirectUrl, currentUrl);
               }
 
-              if (res.statusCode === 405 || res.statusCode === 403) {
-                return attemptGet(currentUrl);
+              if (res.statusCode && res.statusCode >= 400) {
+                return attemptGet(currentUrl, refererUrl);
               }
 
               const contentLength = parseInt(res.headers['content-length'] || '0', 10);
@@ -319,11 +389,11 @@ export class DownloadEngine {
           );
 
           req.on('error', () => {
-            attemptGet(currentUrl);
+            attemptGet(currentUrl, refererUrl);
           });
           req.on('timeout', () => {
             req.destroy();
-            reject(new Error('Connection timed out while probing URL'));
+            attemptGet(currentUrl, refererUrl);
           });
           req.end();
         } catch (err) {
@@ -331,33 +401,49 @@ export class DownloadEngine {
         }
       };
 
-      const attemptGet = (currentUrl: string) => {
+      const attemptGet = (currentUrl: string, refererUrl = '', withRange = true) => {
         try {
           const parsed = new URL(currentUrl);
           const isHttps = parsed.protocol === 'https:';
           const client = isHttps ? https : http;
           const agent = isHttps ? this.httpsAgent : this.httpAgent;
 
+          const reqHeaders: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+            ...customHeaders,
+          };
+          if (withRange) {
+            reqHeaders['Range'] = 'bytes=0-0';
+          }
+          if (currentCookie) reqHeaders['Cookie'] = currentCookie;
+          if (refererUrl) reqHeaders['Referer'] = refererUrl;
+
           const req = client.request(
             currentUrl,
             {
               method: 'GET',
               agent,
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-                Range: 'bytes=0-0',
-                ...customHeaders,
-              },
+              headers: reqHeaders,
               timeout: 15000,
             },
             (res) => {
+              if (res.headers['set-cookie']) {
+                currentCookie = mergeCookies(currentCookie, res.headers['set-cookie']);
+              }
+
               if ([301, 302, 303, 307, 308].includes(res.statusCode || 0) && res.headers.location) {
                 redirectCount++;
                 if (redirectCount > maxRedirects) {
                   return reject(new Error('Too many redirects'));
                 }
                 const redirectUrl = new URL(res.headers.location, currentUrl).toString();
-                return attempt(redirectUrl);
+                return attemptGet(redirectUrl, currentUrl, withRange);
+              }
+
+              // If Range request was rejected with 400 or 416, retry without Range header
+              if (withRange && (res.statusCode === 400 || res.statusCode === 416)) {
+                req.destroy();
+                return attemptGet(currentUrl, refererUrl, false);
               }
 
               let contentLength = 0;
@@ -375,8 +461,32 @@ export class DownloadEngine {
 
               const resumable = res.statusCode === 206 || res.headers['accept-ranges'] === 'bytes';
               const mimeType = res.headers['content-type'];
-              const filename = parseFilenameFromHeaders(res.headers, currentUrl);
-              const category = detectCategory(filename, mimeType);
+              let filename = parseFilenameFromHeaders(res.headers, currentUrl);
+
+              // If response is HTML, check for Google Drive confirmation page
+              if (mimeType?.includes('text/html')) {
+                let htmlBody = '';
+                res.on('data', (d: Buffer) => {
+                  if (htmlBody.length < 50000) htmlBody += d.toString('utf-8');
+                });
+                res.on('end', () => {
+                  const confirmedUrl = extractGoogleDriveConfirmation(htmlBody, currentUrl);
+                  if (confirmedUrl && confirmedUrl !== currentUrl && redirectCount < maxRedirects) {
+                    redirectCount++;
+                    return attemptGet(confirmedUrl, currentUrl, withRange);
+                  }
+                  resolve({
+                    url: currentUrl,
+                    filename,
+                    fileSize: isNaN(contentLength) ? 0 : contentLength,
+                    resumable,
+                    mimeType,
+                    category: detectCategory(filename, mimeType),
+                    suggestedSavePath: '',
+                  });
+                });
+                return;
+              }
 
               req.destroy();
 
@@ -386,15 +496,23 @@ export class DownloadEngine {
                 fileSize: isNaN(contentLength) ? 0 : contentLength,
                 resumable,
                 mimeType,
-                category,
+                category: detectCategory(filename, mimeType),
                 suggestedSavePath: '',
               });
             }
           );
 
-          req.on('error', (err) => reject(err));
+          req.on('error', (err) => {
+            if (withRange) {
+              return attemptGet(currentUrl, refererUrl, false);
+            }
+            reject(err);
+          });
           req.on('timeout', () => {
             req.destroy();
+            if (withRange) {
+              return attemptGet(currentUrl, refererUrl, false);
+            }
             reject(new Error('Connection timed out while probing URL'));
           });
           req.end();
@@ -508,14 +626,12 @@ export class DownloadEngine {
     let isAborted = false;
     const activeRequests: http.ClientRequest[] = [];
     let pendingWrites = 0;
-    let isFinished = false;
 
     const abortHandler = () => {
       isAborted = true;
       activeRequests.forEach(req => {
         try { req.destroy(); } catch {}
       });
-      // Wait for pending async writes before closing fd
       setTimeout(() => {
         try { fs.closeSync(fileFd); } catch {}
       }, 200);
@@ -524,7 +640,6 @@ export class DownloadEngine {
 
     this.activeStreams.set(task.id, { abort: abortHandler });
 
-    // Progress update timer (250ms interval for responsive UI)
     const progressInterval = setInterval(() => {
       if (task.status !== 'downloading' || isAborted) {
         clearInterval(progressInterval);
@@ -551,7 +666,7 @@ export class DownloadEngine {
           return resolve();
         }
 
-        const requestSegment = (currentUrl: string, redirectCount = 0) => {
+        const requestSegment = (currentUrl: string, refererUrl = '', redirectCount = 0) => {
           if (isAborted) return;
           try {
             const parsedUrl = new URL(currentUrl);
@@ -559,25 +674,39 @@ export class DownloadEngine {
             const client = isHttps ? https : http;
             const agent = isHttps ? this.httpsAgent : this.httpAgent;
 
+            const reqHeaders: Record<string, string> = {
+              Range: `bytes=${currentStart}-${currentEnd}`,
+              'User-Agent': task.headers?.['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+              ...task.headers,
+            };
+            if (task.headers?.['Cookie']) reqHeaders['Cookie'] = task.headers['Cookie'];
+            if (refererUrl) reqHeaders['Referer'] = refererUrl;
+
             const req = client.request(
               currentUrl,
               {
                 method: 'GET',
                 agent,
-                headers: {
-                  Range: `bytes=${currentStart}-${currentEnd}`,
-                  'User-Agent': task.headers?.['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-                  ...task.headers,
-                },
+                headers: reqHeaders,
               },
               (res) => {
+                if (res.headers['set-cookie'] && task.headers) {
+                  task.headers['Cookie'] = mergeCookies(task.headers['Cookie'] || '', res.headers['set-cookie']);
+                }
+
                 if ([301, 302, 303, 307, 308].includes(res.statusCode || 0) && res.headers.location) {
                   if (redirectCount > 8) {
                     seg.status = 'error';
                     return reject(new Error('Too many redirects in chunk stream'));
                   }
                   const redirectUrl = new URL(res.headers.location, currentUrl).toString();
-                  return requestSegment(redirectUrl, redirectCount + 1);
+                  return requestSegment(redirectUrl, currentUrl, redirectCount + 1);
+                }
+
+                // If server returned HTTP 200 to a non-zero range, it does not support Range requests!
+                if (res.statusCode === 200 && currentStart > 0) {
+                  seg.status = 'error';
+                  return reject(new Error('Server does not support multi-segment Range requests (returned HTTP 200)'));
                 }
 
                 if (res.statusCode !== 200 && res.statusCode !== 206) {
@@ -594,12 +723,10 @@ export class DownloadEngine {
                   const targetOffset = writeOffset;
                   writeOffset += chunkSize;
 
-                  // Record bytes immediately for task and segment
                   task.downloadedBytes += chunkSize;
                   seg.downloaded += chunkSize;
                   seg.progress = seg.total > 0 ? Math.min(100, Math.round((seg.downloaded / seg.total) * 100)) : 0;
 
-                  // Record timestamped sample for smooth rolling speed calculation
                   const now = Date.now();
                   const history = this.speedHistories.get(task.id);
                   if (history) {
@@ -616,7 +743,6 @@ export class DownloadEngine {
                     segHist.push({ time: now, bytes: chunkSize });
                   }
 
-                  // Async file write to prevent blocking the Node.js event loop
                   pendingWrites++;
                   fs.write(fileFd, chunk, 0, chunkSize, targetOffset, (writeErr) => {
                     pendingWrites--;
@@ -645,11 +771,6 @@ export class DownloadEngine {
               }
             );
 
-            req.on('socket', (socket) => {
-              socket.setNoDelay(true);
-              socket.setTimeout(25000);
-            });
-
             activeRequests.push(req);
 
             req.on('error', (err) => {
@@ -672,7 +793,6 @@ export class DownloadEngine {
     try {
       await Promise.all(segmentPromises);
 
-      // Wait until all async pending disk writes finish
       const waitForWrites = async () => {
         while (pendingWrites > 0) {
           await new Promise((r) => setTimeout(r, 50));
@@ -707,6 +827,26 @@ export class DownloadEngine {
         fs.closeSync(fileFd);
       } catch {}
 
+      // If multi-segment failed due to Range rejection (HTTP 200), automatically fallback to Single Stream!
+      if (!isAborted && err.message?.includes('does not support multi-segment')) {
+        console.log('Falling back from multi-segment to single stream download for:', task.url);
+        task.resumable = false;
+        task.segmentsCount = 1;
+        task.segments = [{
+          id: 0,
+          start: 0,
+          end: task.fileSize > 0 ? task.fileSize - 1 : 0,
+          downloaded: 0,
+          total: task.fileSize,
+          progress: 0,
+          speed: 0,
+          status: 'pending',
+          color: this.segmentColors[0],
+        }];
+        task.downloadedBytes = 0;
+        return this.downloadSingleStream(task, events);
+      }
+
       if (!isAborted) {
         task.status = 'error';
         task.errorMessage = err.message || 'Download failed';
@@ -719,33 +859,11 @@ export class DownloadEngine {
   }
 
   private async downloadSingleStream(task: DownloadTask, events: EngineEvents): Promise<void> {
-    const parsedUrl = new URL(task.url);
-    const isHttps = parsedUrl.protocol === 'https:';
-    const client = isHttps ? https : http;
-    const agent = isHttps ? this.httpsAgent : this.httpAgent;
-
     let isAborted = false;
-    let fileStream: fs.WriteStream;
+    let fileStream: fs.WriteStream | null = null;
+    let currentCookie = task.headers?.['Cookie'] || '';
 
-    try {
-      fileStream = fs.createWriteStream(task.savePath, { flags: task.downloadedBytes > 0 ? 'a' : 'w' });
-    } catch (err: any) {
-      task.status = 'error';
-      task.errorMessage = err.message;
-      events.onError(task, err);
-      return;
-    }
-
-    const headers: Record<string, string> = {
-      'User-Agent': task.headers?.['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-      ...task.headers,
-    };
-
-    if (task.resumable && task.downloadedBytes > 0) {
-      headers['Range'] = `bytes=${task.downloadedBytes}-`;
-    }
-
-    const startSingleStreamRequest = (currentUrl: string, redirectCount = 0) => {
+    const startSingleStreamRequest = (currentUrl: string, refererUrl = '', redirectCount = 0) => {
       if (isAborted) return;
       try {
         const parsedUrl = new URL(currentUrl);
@@ -753,16 +871,40 @@ export class DownloadEngine {
         const client = isHttps ? https : http;
         const agent = isHttps ? this.httpsAgent : this.httpAgent;
 
-        const req = client.request(currentUrl, { method: 'GET', agent, headers }, (res) => {
+        const reqHeaders: Record<string, string> = {
+          'User-Agent': task.headers?.['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+          ...task.headers,
+        };
+
+        if (currentCookie) reqHeaders['Cookie'] = currentCookie;
+        if (refererUrl) reqHeaders['Referer'] = refererUrl;
+
+        if (task.resumable && task.downloadedBytes > 0) {
+          reqHeaders['Range'] = `bytes=${task.downloadedBytes}-`;
+        }
+
+        const req = client.request(currentUrl, { method: 'GET', agent, headers: reqHeaders }, (res) => {
+          if (res.headers['set-cookie']) {
+            currentCookie = mergeCookies(currentCookie, res.headers['set-cookie']);
+            if (task.headers) task.headers['Cookie'] = currentCookie;
+          }
+
           if ([301, 302, 303, 307, 308].includes(res.statusCode || 0) && res.headers.location) {
-            if (redirectCount > 8) {
+            if (redirectCount > 10) {
               task.status = 'error';
               task.errorMessage = 'Too many redirects';
               events.onError(task, new Error(task.errorMessage));
               return;
             }
             const redirectUrl = new URL(res.headers.location, currentUrl).toString();
-            return startSingleStreamRequest(redirectUrl, redirectCount + 1);
+            return startSingleStreamRequest(redirectUrl, currentUrl, redirectCount + 1);
+          }
+
+          if ((res.statusCode === 400 || res.statusCode === 416) && reqHeaders['Range']) {
+            delete reqHeaders['Range'];
+            task.resumable = false;
+            task.downloadedBytes = 0;
+            return startSingleStreamRequest(currentUrl, refererUrl, redirectCount);
           }
 
           if (res.statusCode !== 200 && res.statusCode !== 206) {
@@ -774,6 +916,41 @@ export class DownloadEngine {
 
           if (!task.fileSize && res.headers['content-length']) {
             task.fileSize = parseInt(res.headers['content-length'], 10);
+          }
+
+          const contentType = (res.headers['content-type'] || '').toLowerCase();
+          const ext = path.extname(task.filename).toLowerCase();
+          const isBinaryExt = ['.zip', '.rar', '.7z', '.iso', '.exe', '.msi', '.tar', '.gz', '.mp4', '.mkv', '.mp3', '.pdf'].includes(ext);
+
+          // Check for HTML response when expecting a binary file (e.g. Google Drive virus warning or login page)
+          if (contentType.includes('text/html') && isBinaryExt) {
+            let htmlBuffer = '';
+            res.on('data', (chunk: Buffer) => {
+              if (htmlBuffer.length < 100000) {
+                htmlBuffer += chunk.toString('utf-8');
+              }
+            });
+            res.on('end', () => {
+              if (isAborted) return;
+              const confirmedUrl = extractGoogleDriveConfirmation(htmlBuffer, currentUrl);
+              if (confirmedUrl && confirmedUrl !== currentUrl && redirectCount < 10) {
+                task.url = confirmedUrl;
+                return startSingleStreamRequest(confirmedUrl, currentUrl, redirectCount + 1);
+              }
+              task.status = 'error';
+              task.errorMessage = 'The server returned an HTML webpage (login required or session expired) instead of the file. Please trigger download from your browser with MDM.';
+              events.onError(task, new Error(task.errorMessage));
+            });
+            return;
+          }
+
+          try {
+            fileStream = fs.createWriteStream(task.savePath, { flags: task.downloadedBytes > 0 ? 'a' : 'w' });
+          } catch (err: any) {
+            task.status = 'error';
+            task.errorMessage = err.message;
+            events.onError(task, err);
+            return;
           }
 
           const progressInterval = setInterval(() => {
@@ -798,24 +975,51 @@ export class DownloadEngine {
             if (history) {
               history.push({ time: now, bytes: chunkSize });
             }
-          });
 
-          res.pipe(fileStream);
-
-          fileStream.on('finish', () => {
-            clearInterval(progressInterval);
-            if (!isAborted) {
-              task.status = 'completed';
-              task.progress = 100;
-              task.speed = 0;
-              task.completedAt = Date.now();
-              this.activeStreams.delete(task.id);
-              this.speedHistories.delete(task.id);
-              events.onCompleted(task);
+            if (fileStream) {
+              fileStream.write(chunk);
             }
           });
 
-          fileStream.on('error', (err) => {
+          res.on('end', () => {
+            clearInterval(progressInterval);
+            if (fileStream) {
+              fileStream.end(() => {
+                if (isAborted) return;
+
+                // Validate completion
+                if (task.fileSize > 0 && task.downloadedBytes < task.fileSize) {
+                  task.status = 'error';
+                  task.errorMessage = `Download incomplete: received ${task.downloadedBytes} of ${task.fileSize} bytes.`;
+                  this.activeStreams.delete(task.id);
+                  this.speedHistories.delete(task.id);
+                  events.onError(task, new Error(task.errorMessage));
+                  return;
+                }
+
+                // If file size was unknown/chunked but downloadedBytes is negligible (< 100 bytes) for binary archives
+                if (isBinaryExt && task.downloadedBytes < 100) {
+                  task.status = 'error';
+                  task.errorMessage = `Download terminated prematurely by server (received ${task.downloadedBytes} bytes). Please re-initiate download from browser.`;
+                  try { fs.unlinkSync(task.savePath); } catch {}
+                  this.activeStreams.delete(task.id);
+                  this.speedHistories.delete(task.id);
+                  events.onError(task, new Error(task.errorMessage));
+                  return;
+                }
+
+                task.status = 'completed';
+                task.progress = 100;
+                task.speed = 0;
+                task.completedAt = Date.now();
+                this.activeStreams.delete(task.id);
+                this.speedHistories.delete(task.id);
+                events.onCompleted(task);
+              });
+            }
+          });
+
+          res.on('error', (err) => {
             clearInterval(progressInterval);
             if (!isAborted) {
               task.status = 'error';
@@ -827,16 +1031,11 @@ export class DownloadEngine {
           });
         });
 
-        req.on('socket', (socket) => {
-          socket.setNoDelay(true);
-          socket.setTimeout(25000);
-        });
-
         this.activeStreams.set(task.id, {
           abort: () => {
             isAborted = true;
             try { req.destroy(); } catch {}
-            try { fileStream.close(); } catch {}
+            try { if (fileStream) fileStream.close(); } catch {}
           }
         });
 

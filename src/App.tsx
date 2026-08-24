@@ -20,7 +20,12 @@ export const App: React.FC = () => {
     tasks,
     settings,
     selectedId,
+    selectedIds,
+    setSelectedIds,
     setSelectedId,
+    pauseSelected,
+    resumeSelected,
+    deleteSelected,
     inspectingTask,
     setInspectingTask,
     checksumTask,
@@ -46,7 +51,7 @@ export const App: React.FC = () => {
   const [currentCategory, setCurrentCategory] = useState<DownloadCategory | 'downloading' | 'completed' | 'queued' | 'error'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [addInitialUrl, setAddInitialUrl] = useState('');
-  const [taskToDelete, setTaskToDelete] = useState<DownloadTask | null>(null);
+  const [tasksToDelete, setTasksToDelete] = useState<DownloadTask[]>([]);
 
   // Theme Management (Dark / Light)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -71,28 +76,6 @@ export const App: React.FC = () => {
     setTheme(nextTheme);
     updateSettings({ theme: nextTheme });
   };
-
-  // Keyboard shortcuts: Ctrl+K (search), Ctrl+N (new download), Delete (remove selected)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        setCurrentView('downloads');
-        const searchInput = document.querySelector('input[placeholder="Search downloads..."]') as HTMLInputElement;
-        searchInput?.focus();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault();
-        setAddInitialUrl('');
-        setCurrentView('add-url');
-      } else if (e.key === 'Delete' && selectedId) {
-        const task = tasks.find(t => t.id === selectedId);
-        if (task) setTaskToDelete(task);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, tasks]);
 
   // Filter tasks based on category & search query
   const filteredTasks = useMemo(() => {
@@ -126,6 +109,36 @@ export const App: React.FC = () => {
     });
   }, [tasks, currentCategory, searchQuery]);
 
+  // Keyboard shortcuts: Ctrl+A (select all), Ctrl+K (search), Ctrl+N (new download), Delete (remove selected), Escape (clear selection)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isInput = ['INPUT', 'TEXTAREA'].includes((document.activeElement as HTMLElement)?.tagName || '');
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !isInput) {
+        e.preventDefault();
+        setSelectedIds(new Set(filteredTasks.map((t) => t.id)));
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setCurrentView('downloads');
+        const searchInput = document.querySelector('input[placeholder="Search downloads..."]') as HTMLInputElement;
+        searchInput?.focus();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        setAddInitialUrl('');
+        setCurrentView('add-url');
+      } else if (e.key === 'Delete' && selectedIds.size > 0 && !isInput) {
+        e.preventDefault();
+        const selectedList = tasks.filter((t) => selectedIds.has(t.id));
+        if (selectedList.length > 0) setTasksToDelete(selectedList);
+      } else if (e.key === 'Escape' && !isInput) {
+        setSelectedIds(new Set());
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIds, filteredTasks, tasks, setSelectedIds]);
+
   const activeDownloads = tasks.filter(t => t.status === 'downloading');
 
   const handleToggleSpeedLimit = () => {
@@ -133,16 +146,17 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteSelected = () => {
-    if (!selectedId) return;
-    const task = tasks.find(t => t.id === selectedId);
-    if (task) {
-      setTaskToDelete(task);
+    const selectedList = tasks.filter((t) => selectedIds.has(t.id));
+    if (selectedList.length > 0) {
+      setTasksToDelete(selectedList);
     }
   };
 
-  const handleConfirmDelete = (id: string, deleteFile: boolean) => {
-    cancelDownload(id, deleteFile);
-    if (selectedId === id) setSelectedId(null);
+  const handleConfirmDelete = (ids: string[], deleteFile: boolean) => {
+    for (const id of ids) {
+      cancelDownload(id, deleteFile);
+    }
+    setSelectedIds(new Set());
   };
 
   const handleOpenAddWithUrl = (url: string) => {
@@ -161,9 +175,10 @@ export const App: React.FC = () => {
         onPauseAll={pauseAll}
         onResumeAll={resumeAll}
         selectedId={selectedId}
+        selectedCount={selectedIds.size}
         onDeleteSelected={handleDeleteSelected}
-        onPauseSelected={() => selectedId && pauseDownload(selectedId)}
-        onResumeSelected={() => selectedId && resumeDownload(selectedId)}
+        onPauseSelected={pauseSelected}
+        onResumeSelected={resumeSelected}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         speedLimitEnabled={settings.speedLimitEnabled}
@@ -213,11 +228,16 @@ export const App: React.FC = () => {
             <DownloadTable
               tasks={filteredTasks}
               selectedId={selectedId}
+              selectedIds={selectedIds}
               onSelectTask={setSelectedId}
+              onSelectionChange={setSelectedIds}
               onPause={pauseDownload}
               onResume={resumeDownload}
               onRestart={restartDownload}
-              onDeleteRequest={(task) => setTaskToDelete(task)}
+              onBatchPause={pauseSelected}
+              onBatchResume={resumeSelected}
+              onBatchDelete={(deleteFiles) => deleteSelected(deleteFiles)}
+              onDeleteRequest={(task) => setTasksToDelete([task])}
               onDeleteDirect={(id, deleteFile) => cancelDownload(id, deleteFile)}
               onOpenFile={openFile}
               onShowInFolder={showInFolder}
@@ -261,7 +281,7 @@ export const App: React.FC = () => {
 
         {/* Right Info */}
         <div className="flex items-center space-x-2 text-[10px]">
-          <span className="font-mono text-theme-sub">MDM v1.0</span>
+          <span className="font-mono text-theme-sub">MDM v1.1.2</span>
           <div className="flex items-center space-x-1 text-brand">
             <ShieldCheck className="w-3 h-3" />
             <span>Ready</span>
@@ -283,8 +303,8 @@ export const App: React.FC = () => {
       />
 
       <DeleteConfirmModal
-        task={taskToDelete}
-        onClose={() => setTaskToDelete(null)}
+        tasks={tasksToDelete}
+        onClose={() => setTasksToDelete([])}
         onConfirm={handleConfirmDelete}
       />
 

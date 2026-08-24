@@ -56,6 +56,7 @@ export interface DownloadTask {
   mediaType?: 'video' | 'audio';
   mediaQuality?: string;
   audioFormat?: 'mp3' | 'm4a' | 'flac' | 'wav' | 'opus';
+  convertFormat?: 'png' | 'jpg' | 'jpeg' | 'webp' | 'original';
   mediaThumbnail?: string;
   mediaDuration?: number;
   mediaUploader?: string;
@@ -156,6 +157,7 @@ export interface AddDownloadParams {
   mediaType?: 'video' | 'audio';
   mediaQuality?: string;
   audioFormat?: 'mp3' | 'm4a' | 'flac' | 'wav' | 'opus';
+  convertFormat?: 'png' | 'jpg' | 'jpeg' | 'webp' | 'original';
 }
 
 export interface ProbeResult {
@@ -196,6 +198,7 @@ export interface ElectronAPI {
   testVirusTotalKey?: (apiKey: string) => Promise<{ success: boolean; user?: string; error?: string }>;
   getExtensionPath?: () => Promise<string>;
   openExtensionFolder?: () => Promise<string>;
+  installBrowserExtension?: (browserType: 'chrome' | 'edge' | 'brave' | 'firefox') => Promise<{ success: boolean; path?: string; error?: string }>;
   onDownloadUpdate: (callback: (task: DownloadTask) => void) => () => void;
   onDownloadCompleted: (callback: (task: DownloadTask) => void) => () => void;
   onClipboardUrlDetected: (callback: (url: string) => void) => () => void;

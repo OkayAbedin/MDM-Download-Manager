@@ -14,6 +14,7 @@ let store: PersistentStore;
 let queueManager: QueueManager;
 let clipboardWatcher: ClipboardWatcher;
 let powerSaveBlockerId: number | null = null;
+let isQuitting = false;
 
 // Prevent Chromium from throttling JavaScript, timers, and network when minimized or in background
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -22,9 +23,72 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
 const isDev = process.env.NODE_ENV !== 'production' && !app.isPackaged;
 
+// Single Instance Lock: Ensure only 1 instance runs and focuses when opened again
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+const TRAY_ICON_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAAD0UlEQVRYhb2XW0gUYRTHP4OIUrCbuTNr5VO99VBBD70aVIIPVhBEED0WREVWWF53ZjUMhC5CBCklRQnZ/R69Brszs6aV6wVdtRR7KzVrZ+bEOXNx9qLNePvkgwW/Ob//d853zvcdxhjLqKhgSxhjTAxxu0TZ91CQfT8EmYP5nWjT1yrK3C5kmcwM/M1uhLctrQ7nNlz6wkNdlNfFyHzDOUCbaBsZyEImwXEIEtdQ3+fHRfGAxKnzv3tjom1kIEtQuAaCByO+3ahKkDlVkDh9oeD2NBgqMoOSbzeraeda6qI8qVtwuMMTyEQ2C0a4kSDG3OXuRdlP01P86Rs+wQvIRDYTFU5zayio5EGltBqqpDWJBmeE81AprYJqKQeEpG+QzdzD/VAezoaGLzvh2ucdLkTg/3ioDK+Cm18LoP7TFqiS1qaIYO7g6+FiaAW09B4FHVQYi4/C1Y7tZDC9CJ7cXhbKhDdD5YBjZKIDaiP5EJBzE0Qwt/AHvUdA1f+ANe50FUNFOBtEJfU8iEoewV8Pltnr/2oTcKV9a4po5gZ+v+cwqPok6PSnJQpIOpAIx29eDZbSOl1XTQHj3gQETfi9nkMQ134bxky4IWBfigcMeCa8GDhnwjWSjANtuBYQJHgm3O05SK5LhqcTgBmCgp/HztjrDbhHAaLiJ0PN3QfgjzaeFm4JwKwQ5TzbW09jp5Lg4E2AKPuhIrwSbncXw6T2y/wcYzi1E2s0d+2ntTXKRoI/7j/hWOeEa27PAA/V0jqoa9sEP/+OpNm5TjG1RlO0iDxQFs6CR/3H7V1bbp/61rUHeMrRWiUfhsfb6CMtwahlzjD8bqiKdv6k/wSd9ES4sd6QYWTB9/EIeWvGOiCSF3LIC43RQrgV3WvOPdDUVQRDY2FbRlyfhNGJr47aMOV+TY/D26FKqoC3OguhsbMQLrdtTluOWboqhqHA+FoT3VbykdknXDN3bAz0SOLOn8ZOQmloGZVhywbaTIZPm4boCevWw1mjbICyUBa8GDhr57czzs4C9Sx2mkKDmeG0Md29wdzfBcsdAoy4JsOfD5SY8DxXF5znyyhVwFRmvBw4T8XLC3wOArQE+KvBCwQXPcI9C0AX24fQ9AJet3jzGSXZ3SNlzmdANVMPawHB5dnBSYCbJxnGFUGtfcfsw/f+m0CZMRc4PcncPUrNKhnJhw/fa+FJ7KT5FuBnB7cepW3csKdneUDKpVBg/Xf7KP3/s1zy0pjwFI7ZnPZpGxNnayYonLrorRkzm9OAlHvdaE79C9ic+tM2p3Z7XiPzBQHJ17qY7fk/KACDC8EaT+cAAAAASUVORK5CYII=';
+
+function getAppIcon(): Electron.NativeImage {
+  const candidatePaths = [
+    path.join(__dirname, '../build/icon.ico'),
+    path.join(__dirname, '../build/icon.png'),
+    path.join(process.resourcesPath, 'icon.ico'),
+    path.join(process.resourcesPath, 'icon.png'),
+    path.join(process.resourcesPath, 'build/icon.ico'),
+    path.join(process.resourcesPath, 'build/icon.png'),
+    path.join(app.getAppPath(), 'build/icon.ico'),
+    path.join(app.getAppPath(), 'build/icon.png'),
+  ];
+
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const img = nativeImage.createFromPath(p);
+        if (!img.isEmpty()) return img;
+      } catch {}
+    }
+  }
+  return nativeImage.createFromDataURL(TRAY_ICON_BASE64);
+}
+
+function getTrayIcon(): Electron.NativeImage {
+  const candidatePaths = [
+    path.join(__dirname, '../build/tray-icon.png'),
+    path.join(__dirname, '../build/icon.ico'),
+    path.join(__dirname, '../build/icon.png'),
+    path.join(process.resourcesPath, 'tray-icon.png'),
+    path.join(process.resourcesPath, 'icon.ico'),
+    path.join(process.resourcesPath, 'icon.png'),
+    path.join(process.resourcesPath, 'build/tray-icon.png'),
+    path.join(process.resourcesPath, 'build/icon.ico'),
+    path.join(app.getAppPath(), 'build/tray-icon.png'),
+    path.join(app.getAppPath(), 'build/icon.ico'),
+  ];
+
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const img = nativeImage.createFromPath(p);
+        if (!img.isEmpty()) return img;
+      } catch {}
+    }
+  }
+  return nativeImage.createFromDataURL(TRAY_ICON_BASE64);
+}
+
 function createWindow(): void {
-  const appIconPath = path.join(__dirname, '../build/icon.ico');
-  const appIcon = fs.existsSync(appIconPath) ? nativeImage.createFromPath(appIconPath) : undefined;
+  const appIcon = getAppIcon();
 
   const currentTheme = store?.getSettings()?.theme || 'dark';
   nativeTheme.themeSource = currentTheme;
@@ -61,29 +125,41 @@ function createWindow(): void {
     mainWindow.loadURL('http://localhost:5173');
   }
 
+  // Intercept window close event to hide to System Tray instead of quitting
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+      return false;
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
 function createTray(): void {
-  const iconPath = path.join(__dirname, '../build/icon.ico');
-  const trayIcon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
-  
+  if (tray) return;
+
+  const trayIcon = getTrayIcon();
+
   try {
     tray = new Tray(trayIcon);
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'MDM - Download Manager', enabled: false },
+      { label: 'MDM - Download Manager v1.1.2', enabled: false },
       { type: 'separator' },
       { 
-        label: 'Show MDM', 
+        label: 'Open MDM', 
         click: () => {
           if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.show();
             mainWindow.focus();
           }
         } 
       },
+      { type: 'separator' },
       { 
         label: 'Pause All Downloads', 
         click: () => queueManager.pauseAll() 
@@ -96,15 +172,30 @@ function createTray(): void {
       { 
         label: 'Exit MDM', 
         click: () => {
+          isQuitting = true;
           app.quit();
         } 
       },
     ]);
 
-    tray.setToolTip('MDM - Download Manager');
+    tray.setToolTip('MDM - Download Manager (Running in background)');
     tray.setContextMenu(contextMenu);
+
+    // Left click toggles or restores window
+    tray.on('click', () => {
+      if (!mainWindow) return;
+      if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        mainWindow.hide();
+      } else {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+
     tray.on('double-click', () => {
       if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.show();
         mainWindow.focus();
       }
@@ -125,6 +216,40 @@ app.whenReady().then(() => {
   };
 
   const handleTaskCompleted = async (task: DownloadTask) => {
+    // If image format conversion was requested, perform conversion using nativeImage
+    if (task.convertFormat && task.convertFormat !== 'original' && fs.existsSync(task.savePath)) {
+      try {
+        const img = nativeImage.createFromPath(task.savePath);
+        if (!img.isEmpty()) {
+          let convertedBuffer: Buffer | null = null;
+          let newExt = `.${task.convertFormat}`;
+          if (task.convertFormat === 'png') {
+            convertedBuffer = img.toPNG();
+            newExt = '.png';
+          } else if (task.convertFormat === 'jpg' || task.convertFormat === 'jpeg') {
+            convertedBuffer = img.toJPEG(95);
+            newExt = '.jpg';
+          }
+
+          if (convertedBuffer && convertedBuffer.length > 0) {
+            const parsedPath = path.parse(task.savePath);
+            const targetSavePath = path.join(parsedPath.dir, `${parsedPath.name}${newExt}`);
+            fs.writeFileSync(targetSavePath, convertedBuffer);
+            if (targetSavePath !== task.savePath) {
+              try { fs.unlinkSync(task.savePath); } catch {}
+              task.savePath = targetSavePath;
+              task.filename = `${parsedPath.name}${newExt}`;
+              task.fileSize = convertedBuffer.length;
+              task.downloadedBytes = convertedBuffer.length;
+              store.updateTask(task);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Image format conversion error:', err);
+      }
+    }
+
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('download-completed', task);
     }
@@ -225,7 +350,7 @@ function startLocalIntegrationServer(): void {
 
       if (req.method === 'GET' && parsedUrl.pathname === '/status') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', app: 'MDM', version: '1.0.0' }));
+        res.end(JSON.stringify({ status: 'ok', app: 'MDM', version: '1.1.2' }));
         return;
       }
 
@@ -245,6 +370,7 @@ function startLocalIntegrationServer(): void {
               url: data.url,
               filename: data.filename,
               headers: data.headers,
+              convertFormat: data.convertFormat,
               autoStart: data.autoStart !== false,
             });
 
@@ -523,6 +649,31 @@ function setupIpcHandlers(): void {
     return '';
   });
 
+  ipcMain.handle('extension:install-browser', async (_event, browserType: 'chrome' | 'edge' | 'brave' | 'firefox') => {
+    const dir = getOrExtractExtensionDir();
+    const { exec } = await import('child_process');
+    const { clipboard } = await import('electron');
+
+    if (dir) {
+      clipboard.writeText(dir);
+    }
+
+    try {
+      if (browserType === 'chrome') {
+        exec(`start chrome "chrome://extensions"`);
+      } else if (browserType === 'edge') {
+        exec(`start msedge "edge://extensions"`);
+      } else if (browserType === 'brave') {
+        exec(`start brave "brave://extensions"`);
+      } else if (browserType === 'firefox') {
+        exec(`start firefox "about:debugging#/runtime/this-firefox"`);
+      }
+      return { success: true, path: dir };
+    } catch (err: any) {
+      return { success: false, error: err.message, path: dir };
+    }
+  });
+
   ipcMain.on('window-minimize', () => {
     mainWindow?.minimize();
   });
@@ -536,12 +687,20 @@ function setupIpcHandlers(): void {
   });
 
   ipcMain.on('window-close', () => {
-    mainWindow?.close();
+    if (!isQuitting && mainWindow) {
+      mainWindow.hide();
+    } else {
+      mainWindow?.close();
+    }
   });
 }
 
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (isQuitting) {
     app.quit();
   }
 });

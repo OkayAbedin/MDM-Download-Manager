@@ -1,6 +1,6 @@
 {
   "name": "mdm",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "Modern Download Manager for Windows - High speed multi-segment download accelerator",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -26,6 +26,9 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "build/tray-icon.png",
+      "build/icon.ico",
+      "build/icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -36,6 +39,18 @@
       {
         "from": "extension",
         "to": "extension"
+      },
+      {
+        "from": "build/tray-icon.png",
+        "to": "tray-icon.png"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "electronDist": "node_modules/electron/dist",
@@ -52,6 +67,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "MDM - Download Manager",
+      "include": "build/installer.nsh",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",

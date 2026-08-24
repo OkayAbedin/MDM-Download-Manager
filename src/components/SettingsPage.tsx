@@ -40,6 +40,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [keyTestStatus, setKeyTestStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [extensionPath, setExtensionPath] = useState<string>('');
   const [copiedExtPath, setCopiedExtPath] = useState(false);
+  const [browserNotice, setBrowserNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (window.electronAPI.getExtensionPath) {
@@ -48,6 +49,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       }).catch(() => {});
     }
   }, []);
+
+  const handleAutoInstallBrowser = async (browser: 'chrome' | 'edge' | 'brave' | 'firefox') => {
+    if (window.electronAPI?.installBrowserExtension) {
+      const res = await window.electronAPI.installBrowserExtension(browser);
+      if (res.path) {
+        setExtensionPath(res.path);
+      }
+      setBrowserNotice(`Opened ${browser.toUpperCase()} & copied extension path to clipboard! Click "Load Unpacked" and paste the folder path.`);
+      setTimeout(() => setBrowserNotice(null), 8000);
+    }
+  };
 
   const handleOpenExtensionFolder = async () => {
     if (window.electronAPI.openExtensionFolder) {
@@ -671,22 +683,83 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       </p>
                     </div>
 
+                    {/* 1-Click Browser Launchers */}
+                    <div className="space-y-2">
+                      <span className="font-semibold text-theme-text text-xs">1-Click Auto-Setup by Browser:</span>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => handleAutoInstallBrowser('chrome')}
+                          className="flex items-center justify-between p-2.5 rounded-md bg-theme-main border border-theme-border hover:border-brand/50 hover:bg-theme-surface transition cursor-pointer text-left group"
+                        >
+                          <div>
+                            <div className="font-semibold text-xs text-theme-text group-hover:text-brand">Google Chrome</div>
+                            <div className="text-[10px] text-theme-muted">Opens chrome://extensions</div>
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-brand/10 text-brand font-medium">Auto-Open →</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAutoInstallBrowser('edge')}
+                          className="flex items-center justify-between p-2.5 rounded-md bg-theme-main border border-theme-border hover:border-brand/50 hover:bg-theme-surface transition cursor-pointer text-left group"
+                        >
+                          <div>
+                            <div className="font-semibold text-xs text-theme-text group-hover:text-brand">Microsoft Edge</div>
+                            <div className="text-[10px] text-theme-muted">Opens edge://extensions</div>
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-brand/10 text-brand font-medium">Auto-Open →</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAutoInstallBrowser('brave')}
+                          className="flex items-center justify-between p-2.5 rounded-md bg-theme-main border border-theme-border hover:border-brand/50 hover:bg-theme-surface transition cursor-pointer text-left group"
+                        >
+                          <div>
+                            <div className="font-semibold text-xs text-theme-text group-hover:text-brand">Brave Browser</div>
+                            <div className="text-[10px] text-theme-muted">Opens brave://extensions</div>
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-brand/10 text-brand font-medium">Auto-Open →</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAutoInstallBrowser('firefox')}
+                          className="flex items-center justify-between p-2.5 rounded-md bg-theme-main border border-theme-border hover:border-brand/50 hover:bg-theme-surface transition cursor-pointer text-left group"
+                        >
+                          <div>
+                            <div className="font-semibold text-xs text-theme-text group-hover:text-brand">Mozilla Firefox</div>
+                            <div className="text-[10px] text-theme-muted">Opens about:debugging</div>
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-brand/10 text-brand font-medium">Auto-Open →</span>
+                        </button>
+                      </div>
+
+                      {browserNotice && (
+                        <div className="p-2.5 rounded-md bg-brand/10 border border-brand/30 text-brand text-xs flex items-center space-x-2 animate-in fade-in">
+                          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                          <span>{browserNotice}</span>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Step-by-Step Instructions */}
                     <div className="space-y-2 text-xs text-theme-muted leading-relaxed">
-                      <p className="font-semibold text-theme-text">How to load the Extension into your browser:</p>
+                      <p className="font-semibold text-theme-text">Manual Setup Instructions:</p>
                       <ol className="list-decimal pl-5 space-y-2 text-[11px]">
                         <li>
                           <strong className="text-theme-text">Chrome / Edge / Brave / Opera</strong>:
                           <div className="mt-1">
-                            1. Open <code className="font-mono text-brand bg-theme-main px-1.5 py-0.5 rounded border border-theme-border">chrome://extensions</code> in your browser.<br />
+                            1. Click your browser button above or open <code className="font-mono text-brand bg-theme-main px-1.5 py-0.5 rounded border border-theme-border">chrome://extensions</code>.<br />
                             2. Toggle on <strong>Developer Mode</strong> (top right corner).<br />
-                            3. Click <strong>Load Unpacked</strong>, click <em>Open Extension Folder</em> above, and select that folder!
+                            3. Click <strong>Load Unpacked</strong> and paste the copied extension path!
                           </div>
                         </li>
                         <li>
                           <strong className="text-theme-text">Firefox</strong>:
                           <div className="mt-1">
-                            1. Open <code className="font-mono text-brand bg-theme-main px-1.5 py-0.5 rounded border border-theme-border">about:debugging#/runtime/this-firefox</code>.<br />
+                            1. Click the Firefox button above or open <code className="font-mono text-brand bg-theme-main px-1.5 py-0.5 rounded border border-theme-border">about:debugging#/runtime/this-firefox</code>.<br />
                             2. Click <strong>Load Temporary Add-on</strong> and choose <code className="font-mono text-brand">manifest.json</code> from the extension folder.
                           </div>
                         </li>

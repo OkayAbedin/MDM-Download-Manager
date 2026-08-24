@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   testVirusTotalKey: (apiKey: string) => ipcRenderer.invoke('virustotal:test-key', apiKey),
   getExtensionPath: () => ipcRenderer.invoke('extension:get-path'),
   openExtensionFolder: () => ipcRenderer.invoke('extension:open-folder'),
+  installBrowserExtension: (browserType: 'chrome' | 'edge' | 'brave' | 'firefox') => ipcRenderer.invoke('extension:install-browser', browserType),
   
   onDownloadUpdate: (callback: (task: DownloadTask) => void) => {
     const listener = (_event: any, task: DownloadTask) => callback(task);

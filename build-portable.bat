@@ -27,6 +27,6 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 echo ====================================================
 echo  [SUCCESS] Portable build completed!
-echo  Output: release\MDM - Download Manager 1.1.0.exe
+echo  Output: release\MDM - Download Manager 1.1.2.exe
 echo ====================================================
 echo.

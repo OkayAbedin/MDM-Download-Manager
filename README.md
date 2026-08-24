@@ -101,7 +101,7 @@ graph TD
 ## Getting Started
 
 ### 1. Download Binary
-Pre-compiled binaries are available on the [Releases](https://github.com/your-username/mdm/releases) page:
+Pre-compiled binaries are available on the [Releases](https://github.com/okayabedin/MDM-Download-Manager/releases) page:
 - **`MDM - Download Manager 1.0.0.exe`**: Standalone single-file portable executable (no installer required).
 - **`MDM - Download Manager Setup 1.0.0.exe`**: Standard Windows installer with start menu and desktop shortcuts.
 
@@ -141,8 +141,8 @@ npm run dev
 ```
 
 Output binaries are generated in `release/`:
-- `release/MDM - Download Manager 1.1.0.exe` (Portable)
-- `release/MDM - Download Manager Setup 1.1.0.exe` (Windows Installer)
+- `release/MDM - Download Manager 1.1.2.exe` (Portable)
+- `release/MDM - Download Manager Setup 1.1.2.exe` (Windows Installer)
 
 ---
 

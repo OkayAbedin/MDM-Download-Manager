@@ -21,6 +21,7 @@ interface NavbarProps {
   onPauseAll: () => void;
   onResumeAll: () => void;
   selectedId: string | null;
+  selectedCount?: number;
   onDeleteSelected: () => void;
   onPauseSelected: () => void;
   onResumeSelected: () => void;
@@ -41,6 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onPauseAll,
   onResumeAll,
   selectedId,
+  selectedCount = 0,
   onDeleteSelected,
   onPauseSelected,
   onResumeSelected,
@@ -163,29 +165,32 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Pause className="w-3.5 h-3.5" />
               </button>
 
-              {selectedId && (
+              {(selectedId || selectedCount > 0) && (
                 <>
                   <div className="h-4 w-[1px] bg-theme-border mx-1" />
                   <button
                     onClick={onResumeSelected}
-                    className="p-1.5 rounded-md bg-theme-card hover:bg-theme-hover text-brand transition cursor-pointer border border-theme-border"
-                    title="Resume Selected"
+                    className="flex items-center space-x-1 px-2 py-1 rounded-md bg-theme-card hover:bg-theme-hover text-brand transition cursor-pointer border border-theme-border text-xs"
+                    title={selectedCount > 1 ? `Resume ${selectedCount} Selected` : "Resume Selected"}
                   >
                     <Play className="w-3.5 h-3.5" />
+                    {selectedCount > 1 && <span className="font-mono text-[10px]">{selectedCount}</span>}
                   </button>
                   <button
                     onClick={onPauseSelected}
-                    className="p-1.5 rounded-md bg-theme-card hover:bg-theme-hover text-amber-500 transition cursor-pointer border border-theme-border"
-                    title="Pause Selected"
+                    className="flex items-center space-x-1 px-2 py-1 rounded-md bg-theme-card hover:bg-theme-hover text-amber-500 transition cursor-pointer border border-theme-border text-xs"
+                    title={selectedCount > 1 ? `Pause ${selectedCount} Selected` : "Pause Selected"}
                   >
                     <Pause className="w-3.5 h-3.5" />
+                    {selectedCount > 1 && <span className="font-mono text-[10px]">{selectedCount}</span>}
                   </button>
                   <button
                     onClick={onDeleteSelected}
-                    className="p-1.5 rounded-md bg-theme-card hover:bg-rose-500/15 text-rose-500 transition cursor-pointer border border-theme-border"
-                    title="Delete Selected"
+                    className="flex items-center space-x-1 px-2 py-1 rounded-md bg-theme-card hover:bg-rose-500/15 text-rose-500 transition cursor-pointer border border-theme-border text-xs"
+                    title={selectedCount > 1 ? `Delete ${selectedCount} Selected` : "Delete Selected"}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
+                    {selectedCount > 1 && <span className="font-mono text-[10px]">{selectedCount}</span>}
                   </button>
                 </>
               )}
