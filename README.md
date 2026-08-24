@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Framework-Electron-47848F?style=for-the-badge&logo=electron&logoColor=white" alt="Electron">
   <img src="https://img.shields.io/badge/UI-React%2018%20%26%20TailwindCSS-84ce19?style=for-the-badge&logo=react&logoColor=black" alt="React & Tailwind">
   <img src="https://img.shields.io/badge/Security-VirusTotal%20v3%20API-3949AB?style=for-the-badge&logo=virustotal&logoColor=white" alt="VirusTotal Antivirus API">
-  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
+  <img src="https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge" alt="License">
 </p>
 
 
@@ -74,7 +74,7 @@ An embedded, standalone `yt-dlp` engine extracts video and audio streams from Yo
 | **Interface** | Basic | Windows 98 legacy | **Modern Supabase / Linear Dark UI** |
 | **Cloud Antivirus Scan** | None | None | **Built-in VirusTotal SHA-256 & Upload Scanner** |
 | **Streaming Media Extraction** | None | Web hooks | **Native Embedded `yt-dlp` Pipeline** |
-| **Trial / Nag Screens** | None | 30-day serial nag popups | **100% Free & Open-Source (MIT)** |
+| **Trial / Nag Screens** | None | 30-day serial nag popups | **100% Free & Open-Source (GPLv3)** |
 | **Privacy & Telemetry** | Browser telemetry | Closed source | **100% Local Loopback (127.0.0.1:9666)** |
 
 ---
@@ -156,7 +156,7 @@ Output binaries are generated in `release/`:
 
 ## License
 
-Distributed under the **MIT License**. See `LICENSE` for details.
+Distributed under the **GNU General Public License v3 (GPLv3)**. See [LICENSE](LICENSE) for details.
 
 ---
 

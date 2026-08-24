@@ -83,8 +83,8 @@
     "electron",
     "windows"
   ],
-  "author": "Antigravity",
-  "license": "MIT",
+  "author": "Okay Abedin",
+  "license": "GPL-3.0-or-later",
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
     "clsx": "^2.1.1",
